@@ -1,8 +1,9 @@
-streamlit>=1.33.0
-transformers>=4.38.0
-torch>=2.2.0
-pandas>=2.2.0
-textstat>=0.7.3
-vaderSentiment>=3.3.2
-plotly>=5.19.0
-matplotlib>=3.8.0
+streamlit
+transformers
+torch
+pandas
+textstat
+vaderSentiment
+plotly
+matplotlib
+
