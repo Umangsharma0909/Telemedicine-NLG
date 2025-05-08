@@ -1,4 +1,7 @@
 streamlit
+transformers
+torch
 pandas
-AdvancedTranscriptProcessor  # if installed via pip; otherwise include the module in your repo
-AdvancedReportGenerator
+textstat
+vadersentiment
+
