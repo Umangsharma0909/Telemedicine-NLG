@@ -1,105 +1,142 @@
 import streamlit as st
 import pandas as pd
-import io
+import plotly.express as px
+import matplotlib.pyplot as plt
+import base64
 import zipfile
-from AdvancedTranscriptProcessor import AdvancedTranscriptProcessor
-from AdvancedReportGenerator import AdvancedReportGenerator
+import textstat
 
-# Configure page
-st.set_page_config(
-    page_title="Smart Medical Dashboard",
-    layout="wide",
-    initial_sidebar_state="expanded"
+from io import StringIO, BytesIO
+from modules.processor import (
+    AdvancedTranscriptProcessor,
+    AdvancedReportGenerator,
+    DataPreprocessor
 )
 
-# Sidebar controls
-st.sidebar.title("Dashboard Controls")
-uploaded_file = st.sidebar.file_uploader("Upload transcription CSV", type=["csv"])
-detail_level = st.sidebar.radio("Patient summary detail level", ("low", "high"), index=0)
-generate = st.sidebar.button("Generate Reports")
+st.set_page_config(layout="wide")
+st.title("🧠 Smart Medical Dashboard with Auto-Generated Insights")
 
-@st.cache_data
-def load_data(csv_file):
-    # Read CSV from uploaded file-like object
-    df = pd.read_csv(csv_file)
-    return df
+uploaded_file = st.file_uploader("📤 Upload a transcript CSV file with a 'transcription' column", type=["csv"])
 
-@st.cache_data
-def process_case(text: str, detail: str):
-    proc = AdvancedTranscriptProcessor(text)
-    gen = AdvancedReportGenerator(proc)
-    clinician_text = gen.clinician_text()
-    patient_text = gen.patient_text(detail)
-    return clinician_text, patient_text
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    st.success(f"Loaded {len(df)} records")
 
-if uploaded_file is not None:
-    try:
-        df = load_data(uploaded_file)
-    except Exception as e:
-        st.error(f"Failed to load CSV: {e}")
-        st.stop()
+    # Initialize storage
+    sentiments = {"pos": [], "neu": [], "neg": []}
+    scores = []
+    risks = {"Low": 0, "Medium": 0, "High": 0}
+    all_topics = {}
+    all_reports = []
 
-    total = len(df)
-    st.sidebar.markdown(f"**Total cases:** {total}")
+    for idx, row in df.iterrows():
+        raw_text = row.get("transcription", "")
+        if not raw_text.strip():
+            continue
 
-    if generate:
-        clinician_reports = {}
-        patient_reports = {}
+        # Preprocessing + NLG
+        clean_text = DataPreprocessor.preprocess(raw_text)
+        proc = AdvancedTranscriptProcessor(clean_text)
+        gen = AdvancedReportGenerator(proc)
 
-        # Generate reports for each case
-        for idx, row in df.iterrows():
-            text = row.get('transcription', '') or ''
-            if not text.strip():
-                continue
-            clin_txt, pat_txt = process_case(text, detail_level)
-            clinician_reports[idx] = clin_txt
-            patient_reports[idx] = pat_txt
+        # Charts data
+        sent = proc.sentiment
+        sentiments["pos"].append(sent.get("pos", 0))
+        sentiments["neu"].append(sent.get("neu", 0))
+        sentiments["neg"].append(sent.get("neg", 0))
 
-        # Package reports into ZIP
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as zipf:
-            for idx, txt in clinician_reports.items():
-                path = f"clinician_reports/case_{idx}_clinician_report.txt"
-                zipf.writestr(path, txt)
-            for idx, txt in patient_reports.items():
-                path = f"patient_summaries/case_{idx}_patient_summary.txt"
-                zipf.writestr(path, txt)
-        buffer.seek(0)
+        score = textstat.flesch_reading_ease(clean_text)
+        scores.append(score)
 
-        st.success("Reports generated successfully!")
+        risk = gen._risk()
+        risks[risk] += 1
+
+        for topic in proc.topics:
+            all_topics[topic] = all_topics.get(topic, 0) + 1
+
+        # Generate reports
+        clinician_txt = gen.clinician_text()
+        patient_txt = gen.patient_text(detail="low")
+
+        all_reports.append({"filename": f"case_{idx+1}/clinician_report.txt", "content": clinician_txt})
+        all_reports.append({"filename": f"case_{idx+1}/patient_summary.txt", "content": patient_txt})
+
+        # UI for each case
+        with st.expander(f"📝 Case {idx+1}", expanded=False):
+            st.subheader("📄 Clinician Report")
+            st.code(clinician_txt, language="markdown")
+            st.download_button(
+                label="⬇️ Download Clinician Report",
+                data=clinician_txt,
+                file_name=f"clinician_case_{idx+1}.txt",
+                mime="text/plain"
+            )
+
+            st.subheader("🩺 Patient Summary")
+            st.markdown(f"```\n{patient_txt}\n```")
+            st.download_button(
+                label="⬇️ Download Patient Summary",
+                data=patient_txt,
+                file_name=f"patient_case_{idx+1}.txt",
+                mime="text/plain"
+            )
+
+    # --- Summary Charts ---
+    st.markdown("---")
+    st.header("📊 Summary Insights")
+
+    st.subheader("📈 Sentiment Distribution")
+    fig_sent = px.box(sentiments, points="all", title="Sentiment Scores by Category")
+    st.plotly_chart(fig_sent, use_container_width=True)
+
+    st.subheader("📚 Readability (Flesch Score)")
+    fig_read = px.histogram(scores, nbins=20, labels={'value': 'Flesch Score'}, title="Flesch Reading Ease Distribution")
+    st.plotly_chart(fig_read, use_container_width=True)
+
+    st.subheader("🚨 Risk Levels")
+    fig_risk = px.pie(names=list(risks.keys()), values=list(risks.values()), title="Overall Risk Distribution")
+    st.plotly_chart(fig_risk, use_container_width=True)
+
+    st.subheader("🧵 Common Medical Topics")
+    topic_df = pd.DataFrame.from_dict(all_topics, orient="index", columns=["Count"]).sort_values("Count", ascending=False)
+    fig_topic = px.bar(topic_df, x=topic_df.index, y="Count", title="Most Frequent Topics")
+    st.plotly_chart(fig_topic, use_container_width=True)
+
+    # --- Metadata CSV Export ---
+    st.subheader("📤 Export Report Metadata")
+    report_df = pd.DataFrame({
+        "Flesch Score": scores,
+        "Sentiment Positive": sentiments["pos"],
+        "Sentiment Neutral": sentiments["neu"],
+        "Sentiment Negative": sentiments["neg"],
+        "Risk Level": [risk for risk, count in risks.items() for _ in range(count)]
+    })
+
+    csv_buffer = StringIO()
+    report_df.to_csv(csv_buffer, index=False)
+    csv_data = csv_buffer.getvalue()
+
+    st.download_button(
+        label="⬇️ Download Metadata Summary (CSV)",
+        data=csv_data,
+        file_name="smart_medical_summary.csv",
+        mime="text/csv"
+    )
+
+    # --- All Reports ZIP Export ---
+    st.subheader("📦 Export All Reports as ZIP")
+    if all_reports:
+        zip_buffer = BytesIO()
+        with zipfile.ZipFile(zip_buffer, "w") as zipf:
+            for report in all_reports:
+                zipf.writestr(report["filename"], report["content"])
+        zip_buffer.seek(0)
+
         st.download_button(
-            label="Download All Reports (ZIP)",
-            data=buffer,
+            label="⬇️ Download All Reports (ZIP)",
+            data=zip_buffer,
             file_name="all_medical_reports.zip",
             mime="application/zip"
         )
 
-        # Display in tabs
-        tabs = st.tabs(["Clinician Reports", "Patient Summaries"])
-        with tabs[0]:
-            st.header("Clinician Reports")
-            for idx, txt in clinician_reports.items():
-                with st.expander(f"Case {idx}"):
-                    st.text(txt)
-                    st.download_button(
-                        label=f"Download Case {idx} Clinician Report",
-                        data=txt,
-                        file_name=f"case_{idx}_clinician_report.txt",
-                        mime="text/plain"
-                    )
-        with tabs[1]:
-            st.header("Patient Summaries")
-            for idx, txt in patient_reports.items():
-                with st.expander(f"Case {idx}"):
-                    st.text(txt)
-                    st.download_button(
-                        label=f"Download Case {idx} Patient Summary",
-                        data=txt,
-                        file_name=f"case_{idx}_patient_summary.txt",
-                        mime="text/plain"
-                    )
-    else:
-        st.info("Configure options in the sidebar and click 'Generate Reports'.")
-else:
-    st.info("Please upload a CSV file to get started.")
 
