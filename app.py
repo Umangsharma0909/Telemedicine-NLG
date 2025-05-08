@@ -20,53 +20,63 @@ generate = st.sidebar.button("Generate Reports")
 
 @st.cache_data
 def load_data(csv_file):
-    return pd.read_csv(csv_file)
+    # Read CSV from uploaded file-like object
+    df = pd.read_csv(csv_file)
+    return df
 
 @st.cache_data
- def process_case(text, detail):
+def process_case(text: str, detail: str):
     proc = AdvancedTranscriptProcessor(text)
     gen = AdvancedReportGenerator(proc)
-    return gen.clinician_text(), gen.patient_text(detail)
+    clinician_text = gen.clinician_text()
+    patient_text = gen.patient_text(detail)
+    return clinician_text, patient_text
 
 if uploaded_file is not None:
-    df = load_data(uploaded_file)
+    try:
+        df = load_data(uploaded_file)
+    except Exception as e:
+        st.error(f"Failed to load CSV: {e}")
+        st.stop()
+
     total = len(df)
     st.sidebar.markdown(f"**Total cases:** {total}")
 
     if generate:
         clinician_reports = {}
         patient_reports = {}
-        
-        # Process each case
+
+        # Generate reports for each case
         for idx, row in df.iterrows():
             text = row.get('transcription', '') or ''
             if not text.strip():
                 continue
-            clin, pat = process_case(text, detail_level)
-            clinician_reports[idx] = clin
-            patient_reports[idx] = pat
-        
-        # Create ZIP in-memory
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w") as zf:
+            clin_txt, pat_txt = process_case(text, detail_level)
+            clinician_reports[idx] = clin_txt
+            patient_reports[idx] = pat_txt
+
+        # Package reports into ZIP
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as zipf:
             for idx, txt in clinician_reports.items():
-                zf.writestr(f"clinician_reports/case_{idx}_clinician_report.txt", txt)
+                path = f"clinician_reports/case_{idx}_clinician_report.txt"
+                zipf.writestr(path, txt)
             for idx, txt in patient_reports.items():
-                zf.writestr(f"patient_summaries/case_{idx}_patient_summary.txt", txt)
-        buf.seek(0)
-        
-        st.success("All reports generated!")
+                path = f"patient_summaries/case_{idx}_patient_summary.txt"
+                zipf.writestr(path, txt)
+        buffer.seek(0)
+
+        st.success("Reports generated successfully!")
         st.download_button(
-            label="Download All Reports as ZIP",
-            data=buf,
+            label="Download All Reports (ZIP)",
+            data=buffer,
             file_name="all_medical_reports.zip",
             mime="application/zip"
         )
-        
-        # Display by section
-        tab_clin, tab_pat = st.tabs(["Clinician Reports", "Patient Summaries"])
-        
-        with tab_clin:
+
+        # Display in tabs
+        tabs = st.tabs(["Clinician Reports", "Patient Summaries"])
+        with tabs[0]:
             st.header("Clinician Reports")
             for idx, txt in clinician_reports.items():
                 with st.expander(f"Case {idx}"):
@@ -77,8 +87,7 @@ if uploaded_file is not None:
                         file_name=f"case_{idx}_clinician_report.txt",
                         mime="text/plain"
                     )
-        
-        with tab_pat:
+        with tabs[1]:
             st.header("Patient Summaries")
             for idx, txt in patient_reports.items():
                 with st.expander(f"Case {idx}"):
@@ -90,6 +99,7 @@ if uploaded_file is not None:
                         mime="text/plain"
                     )
     else:
-        st.info("Configure your settings in the sidebar and click **Generate Reports**.")
+        st.info("Configure options in the sidebar and click 'Generate Reports'.")
 else:
     st.info("Please upload a CSV file to get started.")
+
