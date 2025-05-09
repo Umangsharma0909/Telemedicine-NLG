@@ -122,9 +122,9 @@ if uploaded_file:
 
             with col2:
                 st.markdown("**🩺 Patient Summary**")
-                st.markdown(f"```
-{patient_txt}
-``")
+                st.markdown(f"""```text
+                {patient_txt}
+                 ```""")
                 st.download_button("⬇️ Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
 
     # Visualizations
