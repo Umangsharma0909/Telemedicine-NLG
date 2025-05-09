@@ -1,9 +1,9 @@
-streamlit
-pandas
-textstat
-vaderSentiment
-plotly
-matplotlib
+streamlit>=1.32
+pandas>=2.0.0
+plotly>=5.0.0
+matplotlib>=3.5.0
+textstat>=0.7.3
 fpdf>=1.7.2
-torch==2.0.1
 transformers==4.38.2
+torch==2.0.1
+
