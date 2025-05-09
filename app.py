@@ -49,13 +49,22 @@ st.markdown("""
 st.title("🧠 Smart Medical Dashboard with Auto-Generated Insights")
 st.markdown("""
 This dashboard processes telemedicine transcripts and presents real-time clinical summaries,
-patient-friendly explanations, and analytical insights 
+patient-friendly explanations, and analytical insights .
 """)
 
 uploaded_file = st.file_uploader("📤 Upload a transcript CSV file with a 'transcription' column", type=["csv"])
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
+    st.write("Preview of uploaded data:", df.head())
+
+    if 'transcription' not in df.columns:
+        st.error("❌ The uploaded CSV must contain a 'transcription' column.")
+        st.stop()
+
+    if df['transcription'].dropna().empty:
+        st.warning("⚠️ The 'transcription' column is empty or contains only blank rows.")
+        st.stop()
     st.success(f"Loaded {len(df)} records successfully.")
 
     search_id = st.text_input("🔍 Filter by Patient ID or Index (e.g., 1, 2, ...):")
@@ -68,7 +77,7 @@ if uploaded_file:
     all_pdfs = []
 
     st.markdown("---")
-    st.subheader("🧾 Case-wise Report Summaries")
+    st.subheader(" Case-wise Report Summaries")
 
     for idx, row in df.iterrows():
         if search_id and str(idx+1) != search_id.strip():
@@ -114,16 +123,16 @@ if uploaded_file:
             col1, col2 = st.columns([1, 1])
 
             with col1:
-                st.markdown("**👨‍⚕️ Clinician Report**")
+                st.markdown("** Clinician Report**")
                 st.code(clinician_txt, language="markdown")
-                st.download_button("⬇️ Download Clinician Report", clinician_txt, file_name=f"clinician_case_{idx+1}.txt")
+                st.download_button(" Download Clinician Report", clinician_txt, file_name=f"clinician_case_{idx+1}.txt")
 
             with col2:
                 st.markdown("**🩺 Patient Summary**")
                 st.markdown(f"""```text
 {patient_txt}
 ```""")
-                st.download_button("⬇️ Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
+                st.download_button(" Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
 
     # Visualizations
     st.markdown("---")
@@ -197,4 +206,5 @@ if uploaded_file:
             file_name="all_case_reports_pdf.zip",
             mime="application/zip"
         )
+
 
