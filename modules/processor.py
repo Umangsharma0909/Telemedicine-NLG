@@ -101,14 +101,17 @@ class AdvancedReportGenerator:
         lines.append(f"Risk: {self._risk()}\n")
         return "\n".join(lines)
 
-    def patient_text(self, detail: str = "low") -> str:
+    def patient_text(self, detail: str = "high") -> str:
+        # Provide a longer, more detailed patient summary by default
         full = " ".join(self.sections.values())
         lengths = {'low': (40, 10), 'medium': (80, 20), 'high': (150, 40)}
-        max_len, min_len = lengths.get(detail, lengths['low'])
+        max_len, min_len = lengths.get(detail, lengths['high'])
         summary = safe_summarize(full, max_length=max_len, min_length=min_len)
+        # Replace complex medical terms
         replacements = {'hypertension': 'high blood pressure', 'dyspnea': 'shortness of breath'}
         for k, v in replacements.items():
             summary = re.sub(rf"\b{k}\b", v, summary, flags=re.IGNORECASE)
+        # Ensure readability score >= 80 if possible
         score = textstat.flesch_reading_ease(summary)
         if score < 80:
             sentences = re.split(r'(?<=[.!?]) +', summary)
