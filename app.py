@@ -28,26 +28,21 @@ except Exception:
 # Page configuration
 st.set_page_config(page_title="Smart Medical Dashboard", page_icon="🩺", layout="wide")
 
-# Theme color pickers
-st.sidebar.header("🎨 Customize Theme")
-primary_color = st.sidebar.color_picker("Primary Color", "#1e3a8a")
-secondary_color = st.sidebar.color_picker("Secondary Color", "#3b82f6")
-background_color = st.sidebar.color_picker("Background Color", "#f8fafc")
-text_color = st.sidebar.color_picker("Text Color", "#1e293b")
+# Theme presets only (no default customization)
+st.sidebar.header("🎨 Theme Preset")
+theme_option = st.sidebar.selectbox(
+    "Select Theme",
+    ["Sunrise", "Ocean", "Forest"]
+)
 
-# Inject custom CSS and animations
-# Theme presets
-theme_option = st.sidebar.selectbox("Theme Preset", ["Default", "Sunrise", "Ocean", "Forest"])
-
-# Define preset colors
 presets = {
-    "Default": (primary_color, secondary_color, background_color, text_color),
     "Sunrise": ("#ff7e5f", "#feb47b", "#fff5e6", "#333333"),
-    "Ocean": ("#2E8BC0", "#145DA0", "#B1D4E0", "#033E6B"),
-    "Forest": ("#2E7D32", "#66BB6A", "#E8F5E9", "#1B5E20")
+    "Ocean":   ("#2E8BC0", "#145DA0", "#B1D4E0", "#033E6B"),
+    "Forest":  ("#2E7D32", "#66BB6A", "#E8F5E9", "#1B5E20")
 }
 pr, sc, bg, tx = presets[theme_option]
 
+# Inject custom CSS for selected preset
 st.markdown(f"""
 <style>
 :root {{
@@ -180,4 +175,3 @@ elif menu == "Export":
                     zf2.writestr(name, content)
             buf2.seek(0)
             st.download_button("Download PDF Reports", buf2, file_name="reports_pdf.zip")
-
