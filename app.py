@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import base64
 import zipfile
 import textstat
-
 from io import StringIO, BytesIO
+from fpdf import FPDF
 from modules.processor import (
     AdvancedTranscriptProcessor,
     AdvancedReportGenerator,
@@ -46,7 +46,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 Smart Medical Dashboard with Auto-Generated Insights")
+st.title(" Smart Medical Dashboard with Auto-Generated Insights")
 st.markdown("""
 This dashboard processes telemedicine transcripts and presents real-time clinical summaries,
 patient-friendly explanations, and analytical insights — all powered by AI.
@@ -58,16 +58,22 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
     st.success(f"Loaded {len(df)} records successfully.")
 
+    search_id = st.text_input("🔍 Filter by Patient ID or Index (e.g., 1, 2, ...):")
+
     sentiments = {"pos": [], "neu": [], "neg": []}
     scores = []
     risks = {"Low": 0, "Medium": 0, "High": 0}
     all_topics = {}
     all_reports = []
+    all_pdfs = []
 
     st.markdown("---")
     st.subheader("🧾 Case-wise Report Summaries")
 
     for idx, row in df.iterrows():
+        if search_id and str(idx+1) != search_id.strip():
+            continue
+
         raw_text = row.get("transcription", "")
         if not raw_text.strip():
             continue
@@ -80,7 +86,7 @@ if uploaded_file:
         sentiments["pos"].append(sent.get("pos", 0))
         sentiments["neu"].append(sent.get("neu", 0))
         sentiments["neg"].append(sent.get("neg", 0))
-        
+
         score = textstat.flesch_reading_ease(clean_text)
         scores.append(score)
 
@@ -96,7 +102,17 @@ if uploaded_file:
         all_reports.append({"filename": f"case_{idx+1}/clinician_report.txt", "content": clinician_txt})
         all_reports.append({"filename": f"case_{idx+1}/patient_summary.txt", "content": patient_txt})
 
-        with st.expander(f"📌 Case {idx+1}", expanded=False):
+        # Generate PDF report
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.multi_cell(0, 10, f"Clinician Report\n\n{clinician_txt}\n\nPatient Summary\n\n{patient_txt}")
+        pdf_output = BytesIO()
+        pdf.output(pdf_output)
+        pdf_output.seek(0)
+        all_pdfs.append((f"case_{idx+1}.pdf", pdf_output.read()))
+
+        with st.expander(f"📌 Case {idx+1}", expanded=not search_id):
             col1, col2 = st.columns([1, 1])
 
             with col1:
@@ -108,7 +124,7 @@ if uploaded_file:
                 st.markdown("**🩺 Patient Summary**")
                 st.markdown(f"```
 {patient_txt}
-```")
+``")
                 st.download_button("⬇️ Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
 
     # Visualizations
@@ -168,5 +184,18 @@ if uploaded_file:
             mime="application/zip"
         )
 
+    # Export all PDFs as ZIP
+    st.subheader("🖨️ Export All Reports as PDF Bundle")
+    if all_pdfs:
+        pdf_zip_buffer = BytesIO()
+        with zipfile.ZipFile(pdf_zip_buffer, "w") as pdf_zip:
+            for name, content in all_pdfs:
+                pdf_zip.writestr(name, content)
+        pdf_zip_buffer.seek(0)
 
-
+        st.download_button(
+            label="⬇️ Download All Reports (PDF ZIP)",
+            data=pdf_zip_buffer,
+            file_name="all_case_reports_pdf.zip",
+            mime="application/zip"
+        )
