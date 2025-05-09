@@ -103,12 +103,12 @@ if menu == "Upload & Process":
                 pdf_bytes = pdf.output(dest='S').encode('latin1')
                 pdfs.append((f"case_{i+1}.pdf", pdf_bytes))
 
-            # display
+                        # display
             st.subheader(f"Case {i+1}")
             st.markdown("**Clinician Report:**")
-                st.code(clin, language="text")
+            st.code(clin, language="text")
             st.markdown("**Patient Summary:**")
-                st.code(pat, language="text")
+            st.code(pat, language="text")
 
         # store in session
         st.session_state.update({
@@ -150,3 +150,4 @@ elif menu == "Export" and 'reports' in st.session_state:
         st.download_button("Download PDFs", buf2, file_name="reports_pdf.zip")
 else:
     st.info("Please upload data in 'Upload & Process' first.")
+
