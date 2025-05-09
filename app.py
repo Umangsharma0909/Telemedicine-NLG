@@ -78,14 +78,14 @@ h1, h2, h3, h4 {{
 </style>
 """, unsafe_allow_html=True)
 # Title
-st.title("🧠 Smart Medical Dashboard")
-st.markdown("Upload a CSV with a 'transcription' column to generate AI-powered summaries and insights.")
+st.title("Smart Medical Dashboard")
+st.markdown("Upload a CSV with a 'transcription' column to generate summaries and insights.")
 
 # Navigation
 menu = st.sidebar.radio("Navigate", ["Upload & Process", "Insights", "Export"])
 
 if menu == "Upload & Process":
-    st.header("🚀 Upload & Process")
+    st.header(" Upload & Process")
     uploaded = st.file_uploader("Select transcript CSV", type=["csv"])
     if uploaded:
         df = pd.read_csv(uploaded)
