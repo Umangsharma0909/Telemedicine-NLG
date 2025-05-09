@@ -104,13 +104,15 @@ if menu == "Upload & Process":
                 pdfs.append((f"case_{i+1}.pdf", pdf_bytes))
 
             # display
-            st.subheader(f"Case {i+1}")
-            st.markdown(f"**Clinician Report:**\n```
+st.markdown(f"""**Clinician Report:**
+```text
 {clin}
-```")
-            st.markdown(f"**Patient Summary:**\n```
+```""")
+
+st.markdown(f"""**Patient Summary:**
+```text
 {pat}
-```")
+```""")
 
         # store in session
         st.session_state.update({
