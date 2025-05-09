@@ -22,121 +22,129 @@ st.set_page_config(
 
 st.markdown("""
     <style>
-    .reportview-container {
-        background: #f8f9fa;
-    }
-    .sidebar .sidebar-content {
-        background-color: #dbeafe;
-    }
-    .block-container {
-        padding: 2rem 2rem 2rem 2rem;
-    }
-    .stButton>button {
-        background-color: #2563eb;
+    body {
+        background-color: #0f172a;
         color: white;
-        border-radius: 10px;
-        padding: 0.4rem 1rem;
     }
-    .stDownloadButton>button {
+    .reportview-container .main .block-container {
+        padding: 2rem;
+        background-color: #1e293b;
+        border-radius: 10px;
+    }
+    .stDownloadButton>button, .stButton>button {
         background-color: #10b981;
         color: white;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+    }
+    .stMetric {
+        background-color: #334155;
+        padding: 1rem;
         border-radius: 10px;
-        padding: 0.4rem 1rem;
+        margin-bottom: 1rem;
+        color: white;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        color: #38bdf8;
     }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🧠 Smart Medical Dashboard with Auto-Generated Insights")
-st.markdown("""
-This dashboard processes telemedicine transcripts and presents real-time clinical summaries,
-patient-friendly explanations, and analytical insights .
-""")
+st.title("🧠 Smart Medical Dashboard")
+st.markdown("Effortless AI-generated summaries and risk insights from medical transcripts.")
 
-uploaded_file = st.file_uploader("📤 Upload a transcript CSV file with a 'transcription' column", type=["csv"])
+menu = st.sidebar.radio("Navigation", ["Upload & Process", "Insights", "Export"])
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.write("Preview of uploaded data:", df.head())
+if menu == "Upload & Process":
+    uploaded_file = st.file_uploader("📤 Upload transcript CSV with 'transcription' column", type=["csv"])
 
-    if 'transcription' not in df.columns:
-        st.error("❌ The uploaded CSV must contain a 'transcription' column.")
-        st.stop()
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.write("Preview of uploaded data:", df.head())
 
-    if df['transcription'].dropna().empty:
-        st.warning("⚠️ The 'transcription' column is empty or contains only blank rows.")
-        st.stop()
-    st.success(f"Loaded {len(df)} records successfully.")
+        if 'transcription' not in df.columns:
+            st.error("❌ The uploaded CSV must contain a 'transcription' column.")
+            st.stop()
 
-    search_id = st.text_input("🔍 Filter by Patient ID or Index (e.g., 1, 2, ...):")
+        if df['transcription'].dropna().empty:
+            st.warning("⚠️ The 'transcription' column is empty or contains only blank rows.")
+            st.stop()
+        st.success(f"Loaded {len(df)} records successfully.")
 
-    sentiments = {"pos": [], "neu": [], "neg": []}
-    scores = []
-    risks = {"Low": 0, "Medium": 0, "High": 0}
-    all_topics = {}
-    all_reports = []
-    all_pdfs = []
+        search_id = st.text_input("🔍 Filter by Patient ID or Index (e.g., 1, 2, ...):")
 
-    st.markdown("---")
-    st.subheader(" Case-wise Report Summaries")
+        sentiments = {"pos": [], "neu": [], "neg": []}
+        scores = []
+        risks = {"Low": 0, "Medium": 0, "High": 0}
+        all_topics = {}
+        all_reports = []
+        all_pdfs = []
 
-    for idx, row in df.iterrows():
-        if search_id and str(idx+1) != search_id.strip():
-            continue
+        st.subheader("🧾 Patient Reports")
 
-        raw_text = row.get("transcription", "")
-        if not raw_text.strip():
-            continue
+        for idx, row in df.iterrows():
+            if search_id and str(idx+1) != search_id.strip():
+                continue
 
-        clean_text = DataPreprocessor.preprocess(raw_text)
-        proc = AdvancedTranscriptProcessor(clean_text)
-        gen = AdvancedReportGenerator(proc)
+            raw_text = row.get("transcription", "")
+            if not raw_text.strip():
+                continue
 
-        sent = proc.sentiment
-        sentiments["pos"].append(sent.get("pos", 0))
-        sentiments["neu"].append(sent.get("neu", 0))
-        sentiments["neg"].append(sent.get("neg", 0))
+            clean_text = DataPreprocessor.preprocess(raw_text)
+            proc = AdvancedTranscriptProcessor(clean_text)
+            gen = AdvancedReportGenerator(proc)
 
-        score = textstat.flesch_reading_ease(clean_text)
-        scores.append(score)
+            sent = proc.sentiment
+            sentiments["pos"].append(sent.get("pos", 0))
+            sentiments["neu"].append(sent.get("neu", 0))
+            sentiments["neg"].append(sent.get("neg", 0))
 
-        risk = gen._risk()
-        risks[risk] += 1
+            score = textstat.flesch_reading_ease(clean_text)
+            scores.append(score)
 
-        for topic in proc.topics:
-            all_topics[topic] = all_topics.get(topic, 0) + 1
+            risk = gen._risk()
+            risks[risk] += 1
 
-        clinician_txt = gen.clinician_text()
-        patient_txt = gen.patient_text(detail="low")
+            for topic in proc.topics:
+                all_topics[topic] = all_topics.get(topic, 0) + 1
 
-        all_reports.append({"filename": f"case_{idx+1}/clinician_report.txt", "content": clinician_txt})
-        all_reports.append({"filename": f"case_{idx+1}/patient_summary.txt", "content": patient_txt})
+            clinician_txt = gen.clinician_text()
+            patient_txt = gen.patient_text(detail="low")
 
-        # Generate PDF report using dest='S' to get binary string
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
-        pdf.multi_cell(0, 10, f"Clinician Report\n\n{clinician_txt}\n\nPatient Summary\n\n{patient_txt}")
-        pdf_bytes = pdf.output(dest='S').encode('latin1')
-        all_pdfs.append((f"case_{idx+1}.pdf", pdf_bytes))
+            all_reports.append({"filename": f"case_{idx+1}/clinician_report.txt", "content": clinician_txt})
+            all_reports.append({"filename": f"case_{idx+1}/patient_summary.txt", "content": patient_txt})
 
-        with st.expander(f"📌 Case {idx+1}", expanded=not search_id):
-            col1, col2 = st.columns([1, 1])
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.multi_cell(0, 10, f"Clinician Report\n\n{clinician_txt}\n\nPatient Summary\n\n{patient_txt}")
+            pdf_bytes = pdf.output(dest='S').encode('latin1')
+            all_pdfs.append((f"case_{idx+1}.pdf", pdf_bytes))
 
-            with col1:
-                st.markdown("** Clinician Report**")
+            with st.expander(f"🩺 Case {idx+1} Summary"):
+                st.metric("Flesch Score", f"{score:.1f}")
+                st.metric("Sentiment", f"{sent.get('compound', 0):.2f}")
+                st.metric("Risk Level", risk)
                 st.code(clinician_txt, language="markdown")
-                st.download_button(" Download Clinician Report", clinician_txt, file_name=f"clinician_case_{idx+1}.txt")
+                st.markdown(f"""```text\n{patient_txt}\n```""")
 
-            with col2:
-                st.markdown("**🩺 Patient Summary**")
-                st.markdown(f"""```text
-{patient_txt}
-```""")
-                st.download_button(" Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
+                st.download_button("⬇️ Download Clinician Report", clinician_txt, file_name=f"clinician_case_{idx+1}.txt")
+                st.download_button("⬇️ Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
 
-    # Visualizations
-    st.markdown("---")
-    st.header("📊 Aggregate Insights")
+        st.session_state.df = df
+        st.session_state.sentiments = sentiments
+        st.session_state.scores = scores
+        st.session_state.risks = risks
+        st.session_state.all_topics = all_topics
+        st.session_state.all_reports = all_reports
+        st.session_state.all_pdfs = all_pdfs
+
+elif menu == "Insights" and 'df' in st.session_state:
+    st.header("📊 Aggregate Medical Insights")
+    sentiments = st.session_state.sentiments
+    scores = st.session_state.scores
+    risks = st.session_state.risks
+    all_topics = st.session_state.all_topics
 
     col1, col2 = st.columns(2)
     with col1:
@@ -161,8 +169,13 @@ if uploaded_file:
         fig_topic = px.bar(topic_df, x=topic_df.index, y="Count", title="Most Frequent Topics")
         st.plotly_chart(fig_topic, use_container_width=True)
 
-    # Export metadata summary CSV
-    st.subheader("📤 Export Report Metadata")
+elif menu == "Export" and 'df' in st.session_state:
+    st.header("📥 Export Reports & Summaries")
+
+    # CSV Export
+    sentiments = st.session_state.sentiments
+    scores = st.session_state.scores
+    risks = st.session_state.risks
     report_df = pd.DataFrame({
         "Flesch Score": scores,
         "Sentiment Positive": sentiments["pos"],
@@ -175,36 +188,22 @@ if uploaded_file:
     report_df.to_csv(csv_buffer, index=False)
     st.download_button("⬇️ Download Metadata Summary (CSV)", data=csv_buffer.getvalue(), file_name="smart_medical_summary.csv", mime="text/csv")
 
-    # Export all reports as ZIP
-    st.subheader("📦 Export All Reports as ZIP")
+    # ZIP Text Reports
+    all_reports = st.session_state.all_reports
     if all_reports:
         zip_buffer = BytesIO()
         with zipfile.ZipFile(zip_buffer, "w") as zipf:
             for report in all_reports:
                 zipf.writestr(report["filename"], report["content"])
         zip_buffer.seek(0)
+        st.download_button("⬇️ Download All Reports (ZIP)", data=zip_buffer, file_name="all_medical_reports.zip", mime="application/zip")
 
-        st.download_button(
-            label="⬇️ Download All Reports (ZIP)",
-            data=zip_buffer,
-            file_name="all_medical_reports.zip",
-            mime="application/zip"
-        )
-
-    # Export all PDFs as ZIP
-    st.subheader("🖨️ Export All Reports as PDF Bundle")
+    # PDF Bundle
+    all_pdfs = st.session_state.all_pdfs
     if all_pdfs:
         pdf_zip_buffer = BytesIO()
         with zipfile.ZipFile(pdf_zip_buffer, "w") as pdf_zip:
             for name, content in all_pdfs:
                 pdf_zip.writestr(name, content)
         pdf_zip_buffer.seek(0)
-
-        st.download_button(
-            label="⬇️ Download All Reports (PDF ZIP)",
-            data=pdf_zip_buffer,
-            file_name="all_case_reports_pdf.zip",
-            mime="application/zip"
-        )
-
-
+        st.download_button("⬇️ Download All Reports (PDF ZIP)", data=pdf_zip_buffer, file_name="all_case_reports_pdf.zip", mime="application/zip")
