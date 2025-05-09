@@ -105,14 +105,12 @@ if menu == "Upload & Process":
 
             # display
             st.subheader(f"Case {i+1}")
-            st.markdown(f"""**Clinician Report:**
-```text
+            st.markdown(f"**Clinician Report:**\n```
 {clin}
-```""")
-            st.markdown(f"""**Patient Summary:**
-```text
+```")
+            st.markdown(f"**Patient Summary:**\n```
 {pat}
-```""")
+```")
 
         # store in session
         st.session_state.update({
@@ -154,6 +152,7 @@ elif menu == "Export" and 'reports' in st.session_state:
         st.download_button("Download PDFs", buf2, file_name="reports_pdf.zip")
 else:
     st.info("Please upload data in 'Upload & Process' first.")
+
 
 
 
