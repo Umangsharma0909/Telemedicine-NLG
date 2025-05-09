@@ -15,7 +15,6 @@ except ImportError:
 
 try:
     from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-    # initialize summarizer
     SUMMARIZER_MODEL = "facebook/bart-large-cnn"
     tokenizer = AutoTokenizer.from_pretrained(SUMMARIZER_MODEL)
     model = AutoModelForSeq2SeqLM.from_pretrained(SUMMARIZER_MODEL)
@@ -24,132 +23,137 @@ try:
 except Exception:
     summarizer_available = False
 
-# Local processor fallback
-from modules.processor import (
-    AdvancedTranscriptProcessor,
-    AdvancedReportGenerator,
-    DataPreprocessor
-)
+from modules.processor import AdvancedTranscriptProcessor, AdvancedReportGenerator, DataPreprocessor
 
-# Wrapper for summarization
-def safe_summarize(text: str, max_length: int = 80, min_length: int = 20) -> str:
+# Safe summarization wrapper
+
+def safe_summarize(text, max_length=80, min_length=20):
     if not summarizer_available:
-        # Fallback: return first min_length words
         return ' '.join(text.split()[:min_length]) + '...'
-    # adjust max_length to input
     words = text.split()
-    max_len = min(max_length, max(5, len(words)-1))
+    max_len = min(max_length, max(5, len(words) - 1))
     try:
         result = summarizer(text, max_length=max_len, min_length=min(min_length, max_len), do_sample=False)
-        return result[0].get('summary_text', text)
-    except Exception:
+        return result[0]['summary_text'] if result else text
+    except:
         return text
 
-st.set_page_config(
-    page_title="Smart Medical Dashboard",
-    page_icon="🩺",
-    layout="wide"
-)
-
+st.set_page_config(page_title="Smart Medical Dashboard", page_icon="🩺", layout="wide")
 st.title("🧠 Smart Medical Dashboard")
-
 menu = st.sidebar.radio("Navigation", ["Upload & Process", "Insights", "Export"])
 
 if menu == "Upload & Process":
-    file = st.file_uploader("Upload CSV with 'transcription' column", type=["csv"])
-    if file:
-        df = pd.read_csv(file)
+    uploaded = st.file_uploader("Upload CSV with 'transcription' column", type=["csv"])
+    if uploaded:
+        df = pd.read_csv(uploaded)
         st.write(df.head())
         if 'transcription' not in df.columns:
-            st.error("CSV must contain 'transcription' column.")
+            st.error("CSV must contain a 'transcription' column.")
             st.stop()
         if df['transcription'].dropna().empty:
-            st.error("Column is empty.")
+            st.warning("The 'transcription' column is empty.")
             st.stop()
         st.success(f"Loaded {len(df)} records.")
 
-        # data stores
-        sentiments, scores, risks, topics = [], [], [], {}
-        reports, pdfs = [], []
+        # Initialize storage
+        sentiments = []
+        scores = []
+        risks = []
+        topics = {}
+        reports = []
+        pdfs = []
 
-        for i, row in df.iterrows():
+        for idx, row in df.iterrows():
             text = str(row['transcription'])
             clean = DataPreprocessor.preprocess(text)
             proc = AdvancedTranscriptProcessor(clean)
             gen = AdvancedReportGenerator(proc)
 
-            # collect stats
-            sent = proc.sentiment
-            sentiments.append(sent)
-            fl_score = textstat.flesch_reading_ease(clean)
-            scores.append(fl_score)
+            # Collect stats
+            sentiments.append(proc.sentiment)
+            score = textstat.flesch_reading_ease(clean)
+            scores.append(score)
             risk = gen._risk()
             risks.append(risk)
             for t in proc.topics:
                 topics[t] = topics.get(t, 0) + 1
 
-            # generate reports
+            # Generate reports
             clin = gen.clinician_text()
             pat = gen.patient_text(detail='low')
-            reports.append((f"case_{i+1}_clinician.txt", clin))
-            reports.append((f"case_{i+1}_patient.txt", pat))
+            reports.append((f"case_{idx+1}_clinician.txt", clin))
+            reports.append((f"case_{idx+1}_patient.txt", pat))
 
-            # optional PDF
+            # Optional PDF export
             if pdf_available:
                 pdf = FPDF()
                 pdf.add_page()
                 pdf.set_font("Arial", size=12)
                 pdf.multi_cell(0, 8, clin + "\n\n" + pat)
                 pdf_bytes = pdf.output(dest='S').encode('latin1')
-                pdfs.append((f"case_{i+1}.pdf", pdf_bytes))
+                pdfs.append((f"case_{idx+1}.pdf", pdf_bytes))
 
-            # display
-            st.subheader(f"Case {i+1}")
-            st.markdown(f"**Clinician Report:**\n```
-{clin}
-```")
-            st.markdown(f"**Patient Summary:**\n```
-{pat}
-```")
+            # Display each case
+            st.subheader(f"Case {idx+1}")
+            st.markdown("**Clinician Report:**")
+            st.code(clin, language="text")
+            st.markdown("**Patient Summary:**")
+            st.code(pat, language="text")
 
-        # store in session
-        st.session_state.update({
-            'stats': {'sentiments': sentiments, 'scores': scores, 'risks': risks, 'topics': topics},
-            'reports': reports, 'pdfs': pdfs
-        })
+        # Store in session state
+        st.session_state['stats'] = {
+            'sentiments': sentiments,
+            'scores': scores,
+            'risks': risks,
+            'topics': topics
+        }
+        st.session_state['reports'] = reports
+        st.session_state['pdfs'] = pdfs
 
-elif menu == "Insights" and 'stats' in st.session_state:
-    st.header("Insights")
-    stats = st.session_state['stats']
-    # sentiment box
-    df_sent = pd.DataFrame(stats['sentiments'])
-    st.plotly_chart(px.box(df_sent))
-    # readability
-    st.plotly_chart(px.histogram(stats['scores'], nbins=10))
-    # risk pie
-    st.plotly_chart(px.pie(names=['Low','Medium','High'], values=[stats['risks'].count('Low'), stats['risks'].count('Medium'), stats['risks'].count('High')]))
-    # topics
-    df_top = pd.DataFrame.from_dict(stats['topics'], orient='index', columns=['count']).reset_index()
-    df_top.columns = ['topic','count']
-    st.plotly_chart(px.bar(df_top, x='topic', y='count'))
+elif menu == "Insights":
+    if 'stats' not in st.session_state:
+        st.info("Please upload data in 'Upload & Process' first.")
+    else:
+        stats = st.session_state['stats']
+        st.header("📈 Insights")
 
-elif menu == "Export" and 'reports' in st.session_state:
-    st.header("Export")
-    # text reports zip
-    buf = BytesIO()
-    with zipfile.ZipFile(buf,'w') as z:
-        for name,content in st.session_state['reports']:
-            z.writestr(name, content)
-    buf.seek(0)
-    st.download_button("Download Text Reports", buf, file_name="reports.zip")
-    # pdfs
-    if pdf_available and st.session_state['pdfs']:
-        buf2=BytesIO()
-        with zipfile.ZipFile(buf2,'w') as z2:
-            for name,content in st.session_state['pdfs']:
-                z2.writestr(name, content)
-        buf2.seek(0)
-        st.download_button("Download PDFs", buf2, file_name="reports_pdf.zip")
-else:
-    st.info("Please upload data in 'Upload & Process' first.")
+        df_sent = pd.DataFrame(stats['sentiments'])
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Sentiment Distribution")
+            st.plotly_chart(px.box(df_sent, points='all'), use_container_width=True)
+        with col2:
+            st.subheader("Readability Scores")
+            st.plotly_chart(px.histogram(stats['scores'], nbins=10), use_container_width=True)
 
+        col3, col4 = st.columns(2)
+        with col3:
+            st.subheader("Risk Breakdown")
+            risk_counts = pd.Series(stats['risks']).value_counts()
+            st.plotly_chart(px.pie(names=risk_counts.index, values=risk_counts.values), use_container_width=True)
+        with col4:
+            st.subheader("Top Topics")
+            df_topics = pd.DataFrame.from_dict(stats['topics'], orient='index', columns=['count']).reset_index()
+            df_topics.columns = ['topic', 'count']
+            st.plotly_chart(px.bar(df_topics, x='topic', y='count'), use_container_width=True)
+
+elif menu == "Export":
+    if 'reports' not in st.session_state:
+        st.info("No reports to export.")
+    else:
+        st.header("📤 Export Reports")
+        # Text reports ZIP
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, 'w') as zf:
+            for name, content in st.session_state['reports']:
+                zf.writestr(name, content)
+        buf.seek(0)
+        st.download_button("Download Text Reports", buf, file_name="reports.zip")
+        # PDF reports ZIP
+        if pdf_available and st.session_state['pdfs']:
+            buf2 = BytesIO()
+            with zipfile.ZipFile(buf2, 'w') as zf2:
+                for name, content in st.session_state['pdfs']:
+                    zf2.writestr(name, content)
+            buf2.seek(0)
+            st.download_button("Download PDF Reports", buf2, file_name="reports_pdf.zip")
