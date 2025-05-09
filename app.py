@@ -21,8 +21,42 @@ st.set_page_config(
     layout="wide"
 )
 
-# Static CSS for consistent look
+# Static CSS for consistent look with animated medical theme
 st.markdown("""
+<style>
+/* Full-page animated gradient background */
+@keyframes gradientBG {
+  0% {background-position: 0% 50%;}
+  50% {background-position: 100% 50%;}
+  100% {background-position: 0% 50%;}
+}
+body {
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(-45deg, #2a9df4, #39c1ed, #8de3f5, #d4f1f9);
+  background-size: 400% 400%;
+  animation: gradientBG 15s ease infinite;
+}
+.block-container {
+    background-color: rgba(255, 255, 255, 0.85);
+    color: #334e68;
+    padding: 2rem;
+    border-radius: 10px;
+}
+.stSidebar {
+    background-color: rgba(42, 111, 151, 0.85);
+}
+.stButton>button, .stDownloadButton>button {
+    background-color: #38a3a5 !important;
+    color: white !important;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+}
+h1, h2, h3 {
+    color: #173f5f;
+}
+</style>
+""", unsafe_allow_html=True)
 <style>
 .block-container {
     background-color: #f0f4f8;
