@@ -3,41 +3,50 @@ import re
 from typing import Dict, List
 
 import pandas as pd
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 import textstat
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+# Try to import HuggingFace transformers for summarization
+try:
+    from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
+    SUMMARIZER_MODEL = "facebook/bart-large-cnn"
+    tokenizer = AutoTokenizer.from_pretrained(SUMMARIZER_MODEL)
+    model = AutoModelForSeq2SeqLM.from_pretrained(SUMMARIZER_MODEL)
+    summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
+    summarizer_available = True
+except Exception:
+    summarizer_available = False
+
 # Constants
-SUMMARIZER_MODEL = "facebook/bart-large-cnn"
 TOPIC_COUNT = 5
-
-# Initialize NLP components
-tokenizer = AutoTokenizer.from_pretrained(SUMMARIZER_MODEL)
-model = AutoModelForSeq2SeqLM.from_pretrained(SUMMARIZER_MODEL)
-summarizer = pipeline("summarization", model=model, tokenizer=tokenizer)
-sentiment_analyzer = SentimentIntensityAnalyzer()
-
 
 class DataPreprocessor:
     @staticmethod
     def preprocess(text: str) -> str:
-        text = re.sub(r"\[?\d{1,2}:\d{2}(?::\d{2})?\]?", "", text)
-        text = re.sub(r"^\w+:\s*", "", text, flags=re.MULTILINE)
+        # Remove timestamps like [00:00:00]
+        cleaned = re.sub(r"\[?\d{1,2}:\d{2}(?::\d{2})?\]?", "", text)
+        # Strip speaker labels
+        cleaned = re.sub(r"^\w+:\s*", "", cleaned, flags=re.MULTILINE)
+        # Remove filler words
         fillers = ['um', 'uh', 'ah', 'hmm', 'you know']
-        filler_pattern = r"\b(?:" + '|'.join(fillers) + r")\b"
-        text = re.sub(filler_pattern, '', text, flags=re.IGNORECASE)
-        return re.sub(r"\s+", ' ', text).strip()
+        pattern = r"\b(?:" + '|'.join(fillers) + r")\b"
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        # Normalize whitespace
+        cleaned = re.sub(r"\s+", ' ', cleaned)
+        return cleaned.strip()
 
 
-def safe_summarize(text: str, max_length: int, min_length: int) -> str:
+def safe_summarize(text: str, max_length: int = 80, min_length: int = 20) -> str:
+    if not summarizer_available:
+        # Fallback: return first min_length words
+        return ' '.join(text.split()[:min_length]) + '...'
+    words = text.split()
+    max_len = min(max_length, max(5, len(words) - 1))
     try:
-        if len(text.split()) < min_length:
-            return text
-        result = summarizer(text, max_length=max_length, min_length=min_length, do_sample=False)
+        result = summarizer(text, max_length=max_len, min_length=min(min_length, max_len), do_sample=False)
         return result[0].get('summary_text', text) if result else text
     except Exception:
         return text
-
 
 class AdvancedTranscriptProcessor:
     SECTION_HEADERS = [
@@ -58,7 +67,7 @@ class AdvancedTranscriptProcessor:
         sections: Dict[str, str] = {}
         for i in range(1, len(parts), 2):
             header = parts[i].strip().title()
-            body = parts[i + 1].strip()
+            body = parts[i+1].strip()
             sections[header] = body
         return sections or {"Transcript": self.text}
 
@@ -67,13 +76,14 @@ class AdvancedTranscriptProcessor:
         freq: Dict[str, int] = {}
         for w in words:
             freq[w] = freq.get(w, 0) + 1
-        stopwords = {"patient", "doctor", "care", "today", "yesterday"}
+        stopwords = {"patient","doctor","care","today","yesterday"}
         filtered = {w: c for w, c in freq.items() if w not in stopwords}
-        return [w for w, _ in sorted(filtered.items(), key=lambda item: item[1], reverse=True)[:TOPIC_COUNT]]
+        top = sorted(filtered.items(), key=lambda item: item[1], reverse=True)[:TOPIC_COUNT]
+        return [w for w, _ in top]
 
     def _analyze_sentiment(self) -> Dict[str, float]:
-        return sentiment_analyzer.polarity_scores(self.text)
-
+        analyzer = SentimentIntensityAnalyzer()
+        return analyzer.polarity_scores(self.text)
 
 class AdvancedReportGenerator:
     def __init__(self, proc: AdvancedTranscriptProcessor):
@@ -96,29 +106,22 @@ class AdvancedReportGenerator:
         lengths = {'low': (40, 10), 'medium': (80, 20), 'high': (150, 40)}
         max_len, min_len = lengths.get(detail, lengths['low'])
         summary = safe_summarize(full, max_length=max_len, min_length=min_len)
-
         replacements = {'hypertension': 'high blood pressure', 'dyspnea': 'shortness of breath'}
         for k, v in replacements.items():
             summary = re.sub(rf"\b{k}\b", v, summary, flags=re.IGNORECASE)
-
         score = textstat.flesch_reading_ease(summary)
         if score < 80:
             sentences = re.split(r'(?<=[.!?]) +', summary)
-            for i in range(1, len(sentences) + 1):
+            for i in range(1, len(sentences)+1):
                 candidate = " ".join(sentences[:i]).strip()
                 if not candidate.endswith('.'):
                     candidate += '.'
                 if textstat.flesch_reading_ease(candidate) >= 80:
                     summary = candidate
-                    score = textstat.flesch_reading_ease(candidate)
                     break
             else:
-                summary = sentences[0].strip()
-                if not summary.endswith('.'):
-                    summary += '.'
-                score = textstat.flesch_reading_ease(summary)
-
-        return f"Patient Summary (Flesch {score:.1f})\n{summary}"
+                summary = sentences[0].strip() + '.'
+        return f"Patient Summary (Flesch {textstat.flesch_reading_ease(summary):.1f})\n{summary}"
 
     def _risk(self) -> str:
         neg = self.sentiment.get('neg', 0)
