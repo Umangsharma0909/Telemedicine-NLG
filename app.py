@@ -1,21 +1,14 @@
-import streamlit as st
+import os
+import re
+from typing import Dict, List
+
 import pandas as pd
-import plotly.express as px
-import matplotlib.pyplot as plt
-import zipfile
 import textstat
-from io import StringIO, BytesIO
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-# Optional imports
-try:
-    from fpdf import FPDF
-    pdf_available = True
-except ImportError:
-    pdf_available = False
-
+# Try to import HuggingFace transformers for summarization
 try:
     from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-    # initialize summarizer
     SUMMARIZER_MODEL = "facebook/bart-large-cnn"
     tokenizer = AutoTokenizer.from_pretrained(SUMMARIZER_MODEL)
     model = AutoModelForSeq2SeqLM.from_pretrained(SUMMARIZER_MODEL)
@@ -24,130 +17,115 @@ try:
 except Exception:
     summarizer_available = False
 
-# Local processor fallback
-from modules.processor import (
-    AdvancedTranscriptProcessor,
-    AdvancedReportGenerator,
-    DataPreprocessor
-)
+# Constants
+TOPIC_COUNT = 5
 
-# Wrapper for summarization
+class DataPreprocessor:
+    @staticmethod
+    def preprocess(text: str) -> str:
+        # Remove timestamps like [00:00:00]
+        cleaned = re.sub(r"\[?\d{1,2}:\d{2}(?::\d{2})?\]?", "", text)
+        # Strip speaker labels
+        cleaned = re.sub(r"^\w+:\s*", "", cleaned, flags=re.MULTILINE)
+        # Remove filler words
+        fillers = ['um', 'uh', 'ah', 'hmm', 'you know']
+        pattern = r"\b(?:" + '|'.join(fillers) + r")\b"
+        cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+        # Normalize whitespace
+        cleaned = re.sub(r"\s+", ' ', cleaned)
+        return cleaned.strip()
+
+
 def safe_summarize(text: str, max_length: int = 80, min_length: int = 20) -> str:
     if not summarizer_available:
-        # Fallback: return first min_length words
         return ' '.join(text.split()[:min_length]) + '...'
-    # adjust max_length to input
     words = text.split()
-    max_len = min(max_length, max(5, len(words)-1))
+    max_len = min(max_length, max(5, len(words) - 1))
     try:
         result = summarizer(text, max_length=max_len, min_length=min(min_length, max_len), do_sample=False)
-        return result[0].get('summary_text', text)
+        return result[0].get('summary_text', text) if result else text
     except Exception:
         return text
 
-st.set_page_config(
-    page_title="Smart Medical Dashboard",
-    page_icon="🩺",
-    layout="wide"
-)
+class AdvancedTranscriptProcessor:
+    SECTION_HEADERS = [
+        "Subjective", "Objective", "Past Medical History",
+        "History of Present Illness", "Review of Systems",
+        "Physical Exam", "Assessment", "Plan", "Assessment and Plan"
+    ]
 
-st.title("🧠 Smart Medical Dashboard")
+    def __init__(self, text: str):
+        self.text = text.strip()
+        self.sections = self._extract_sections()
+        self.topics = self._extract_topics()
+        self.sentiment = self._analyze_sentiment()
 
-menu = st.sidebar.radio("Navigation", ["Upload & Process", "Insights", "Export"])
+    def _extract_sections(self) -> Dict[str, str]:
+        pattern = rf"({'|'.join(self.SECTION_HEADERS)}):?"
+        parts = re.split(pattern, self.text, flags=re.IGNORECASE)
+        sections: Dict[str, str] = {}
+        for i in range(1, len(parts), 2):
+            header = parts[i].strip().title()
+            body = parts[i+1].strip()
+            sections[header] = body
+        return sections or {"Transcript": self.text}
 
-if menu == "Upload & Process":
-    file = st.file_uploader("Upload CSV with 'transcription' column", type=["csv"])
-    if file:
-        df = pd.read_csv(file)
-        st.write(df.head())
-        if 'transcription' not in df.columns:
-            st.error("CSV must contain 'transcription' column.")
-            st.stop()
-        if df['transcription'].dropna().empty:
-            st.error("Column is empty.")
-            st.stop()
-        st.success(f"Loaded {len(df)} records.")
+    def _extract_topics(self) -> List[str]:
+        words = re.findall(r"\b[a-zA-Z]{6,}\b", self.text.lower())
+        freq: Dict[str, int] = {}
+        for w in words:
+            freq[w] = freq.get(w, 0) + 1
+        stopwords = {"patient", "doctor", "care", "today", "yesterday"}
+        filtered = {w: c for w, c in freq.items() if w not in stopwords}
+        top = sorted(filtered.items(), key=lambda item: item[1], reverse=True)[:TOPIC_COUNT]
+        return [w for w, _ in top]
 
-        # data stores
-        sentiments, scores, risks, topics = [], [], [], {}
-        reports, pdfs = [], []
+    def _analyze_sentiment(self) -> Dict[str, float]:
+        analyzer = SentimentIntensityAnalyzer()
+        return analyzer.polarity_scores(self.text)
 
-        for i, row in df.iterrows():
-            text = str(row['transcription'])
-            clean = DataPreprocessor.preprocess(text)
-            proc = AdvancedTranscriptProcessor(clean)
-            gen = AdvancedReportGenerator(proc)
+class AdvancedReportGenerator:
+    def __init__(self, proc: AdvancedTranscriptProcessor):
+        self.sections = proc.sections
+        self.topics = proc.topics
+        self.sentiment = proc.sentiment
 
-            # collect stats
-            sent = proc.sentiment
-            sentiments.append(sent)
-            fl_score = textstat.flesch_reading_ease(clean)
-            scores.append(fl_score)
-            risk = gen._risk()
-            risks.append(risk)
-            for t in proc.topics:
-                topics[t] = topics.get(t, 0) + 1
+    def clinician_text(self) -> str:
+        lines = ["Clinician Report", "================"]
+        lines.append(f"Topics: {', '.join(self.topics)}")
+        lines.append(f"Sentiment: {self.sentiment}\n")
+        for hdr, body in self.sections.items():
+            summary = safe_summarize(body, max_length=80, min_length=20)
+            lines.append(f"{hdr}:\n{summary}\n")
+        lines.append(f"Risk: {self._risk()}\n")
+        return "\n".join(lines)
 
-            # generate reports
-            clin = gen.clinician_text()
-            pat = gen.patient_text(detail='low')
-            reports.append((f"case_{i+1}_clinician.txt", clin))
-            reports.append((f"case_{i+1}_patient.txt", pat))
+    def patient_text(self, detail: str = "low") -> str:
+        full = " ".join(self.sections.values())
+        lengths = {'low': (40, 10), 'medium': (80, 20), 'high': (150, 40)}
+        max_len, min_len = lengths.get(detail, lengths['low'])
+        summary = safe_summarize(full, max_length=max_len, min_length=min_len)
+        replacements = {'hypertension': 'high blood pressure', 'dyspnea': 'shortness of breath'}
+        for k, v in replacements.items():
+            summary = re.sub(rf"\b{k}\b", v, summary, flags=re.IGNORECASE)
+        score = textstat.flesch_reading_ease(summary)
+        if score < 80:
+            sentences = re.split(r'(?<=[.!?]) +', summary)
+            for i in range(1, len(sentences) + 1):
+                candidate = " ".join(sentences[:i]).strip()
+                if not candidate.endswith('.'):
+                    candidate += '.'
+                if textstat.flesch_reading_ease(candidate) >= 80:
+                    summary = candidate
+                    break
+            else:
+                summary = sentences[0].strip() + '.'
+        return f"Patient Summary (Flesch {textstat.flesch_reading_ease(summary):.1f})\n{summary}"
 
-            # optional PDF
-            if pdf_available:
-                pdf = FPDF()
-                pdf.add_page()
-                pdf.set_font("Arial", size=12)
-                pdf.multi_cell(0, 8, clin + "\n\n" + pat)
-                pdf_bytes = pdf.output(dest='S').encode('latin1')
-                pdfs.append((f"case_{i+1}.pdf", pdf_bytes))
-
-                        # display
-            st.subheader(f"Case {i+1}")
-            st.markdown("**Clinician Report:**")
-            st.code(clin, language="text")
-            st.markdown("**Patient Summary:**")
-            st.code(pat, language="text")
-
-        # store in session
-        st.session_state.update({
-            'stats': {'sentiments': sentiments, 'scores': scores, 'risks': risks, 'topics': topics},
-            'reports': reports, 'pdfs': pdfs
-        })
-
-elif menu == "Insights" and 'stats' in st.session_state:
-    st.header("Insights")
-    stats = st.session_state['stats']
-    # sentiment box
-    df_sent = pd.DataFrame(stats['sentiments'])
-    st.plotly_chart(px.box(df_sent))
-    # readability
-    st.plotly_chart(px.histogram(stats['scores'], nbins=10))
-    # risk pie
-    st.plotly_chart(px.pie(names=['Low','Medium','High'], values=[stats['risks'].count('Low'), stats['risks'].count('Medium'), stats['risks'].count('High')]))
-    # topics
-    df_top = pd.DataFrame.from_dict(stats['topics'], orient='index', columns=['count']).reset_index()
-    df_top.columns = ['topic','count']
-    st.plotly_chart(px.bar(df_top, x='topic', y='count'))
-
-elif menu == "Export" and 'reports' in st.session_state:
-    st.header("Export")
-    # text reports zip
-    buf = BytesIO()
-    with zipfile.ZipFile(buf,'w') as z:
-        for name,content in st.session_state['reports']:
-            z.writestr(name, content)
-    buf.seek(0)
-    st.download_button("Download Text Reports", buf, file_name="reports.zip")
-    # pdfs
-    if pdf_available and st.session_state['pdfs']:
-        buf2=BytesIO()
-        with zipfile.ZipFile(buf2,'w') as z2:
-            for name,content in st.session_state['pdfs']:
-                z2.writestr(name, content)
-        buf2.seek(0)
-        st.download_button("Download PDFs", buf2, file_name="reports_pdf.zip")
-else:
-    st.info("Please upload data in 'Upload & Process' first.")
-
+    def _risk(self) -> str:
+        neg = self.sentiment.get('neg', 0)
+        if neg > 0.3:
+            return "High"
+        if neg > 0.1:
+            return "Medium"
+        return "Low"
