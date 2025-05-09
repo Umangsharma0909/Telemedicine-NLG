@@ -39,7 +39,7 @@ def safe_summarize(text, max_length=80, min_length=20):
         return text
 
 st.set_page_config(page_title="Smart Medical Dashboard", page_icon="🩺", layout="wide")
-st.title("🧠 Smart Medical Dashboard")
+st.title("Smart Medical Dashboard")
 menu = st.sidebar.radio("Navigation", ["Upload & Process", "Insights", "Export"])
 
 if menu == "Upload & Process":
