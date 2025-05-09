@@ -105,7 +105,7 @@ class AdvancedReportGenerator:
         # Provide a longer, more detailed patient summary by default
         full = " ".join(self.sections.values())
         lengths = {'low': (40, 10), 'medium': (80, 20), 'high': (150, 40)}
-        max_len, min_len = lengths.get(detail, lengths['high'])
+        max_len, min_len = lengths.get(detail, lengths['medium'])
         summary = safe_summarize(full, max_length=max_len, min_length=min_len)
         # Replace complex medical terms
         replacements = {'hypertension': 'high blood pressure', 'dyspnea': 'shortness of breath'}
