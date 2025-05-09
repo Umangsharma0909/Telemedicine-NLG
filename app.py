@@ -46,10 +46,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title(" Smart Medical Dashboard with Auto-Generated Insights")
+st.title("🧠 Smart Medical Dashboard with Auto-Generated Insights")
 st.markdown("""
 This dashboard processes telemedicine transcripts and presents real-time clinical summaries,
-patient-friendly explanations, and analytical insights — all powered by AI.
+patient-friendly explanations, and analytical insights 
 """)
 
 uploaded_file = st.file_uploader("📤 Upload a transcript CSV file with a 'transcription' column", type=["csv"])
@@ -102,15 +102,13 @@ if uploaded_file:
         all_reports.append({"filename": f"case_{idx+1}/clinician_report.txt", "content": clinician_txt})
         all_reports.append({"filename": f"case_{idx+1}/patient_summary.txt", "content": patient_txt})
 
-        # Generate PDF report
+        # Generate PDF report using dest='S' to get binary string
         pdf = FPDF()
         pdf.add_page()
         pdf.set_font("Arial", size=12)
         pdf.multi_cell(0, 10, f"Clinician Report\n\n{clinician_txt}\n\nPatient Summary\n\n{patient_txt}")
-        pdf_output = BytesIO()
-        pdf.output(pdf_output)
-        pdf_output.seek(0)
-        all_pdfs.append((f"case_{idx+1}.pdf", pdf_output.read()))
+        pdf_bytes = pdf.output(dest='S').encode('latin1')
+        all_pdfs.append((f"case_{idx+1}.pdf", pdf_bytes))
 
         with st.expander(f"📌 Case {idx+1}", expanded=not search_id):
             col1, col2 = st.columns([1, 1])
@@ -123,8 +121,8 @@ if uploaded_file:
             with col2:
                 st.markdown("**🩺 Patient Summary**")
                 st.markdown(f"""```text
-                {patient_txt}
-                 ```""")
+{patient_txt}
+```""")
                 st.download_button("⬇️ Download Patient Summary", patient_txt, file_name=f"patient_case_{idx+1}.txt")
 
     # Visualizations
@@ -199,3 +197,4 @@ if uploaded_file:
             file_name="all_case_reports_pdf.zip",
             mime="application/zip"
         )
+
