@@ -1,11 +1,5 @@
-streamlit==1.33.0
-pandas==2.1.4
-plotly==5.19.0
-matplotlib==3.8.3
-textstat==0.7.3
-fpdf==1.7.2
-transformers==4.38.2
-torch==2.0.1
-
-
-
+streamlit
+pandas
+plotly
+matplotlib
+textstat
