@@ -35,35 +35,53 @@ secondary_color = st.sidebar.color_picker("Secondary Color", "#3b82f6")
 background_color = st.sidebar.color_picker("Background Color", "#f8fafc")
 text_color = st.sidebar.color_picker("Text Color", "#1e293b")
 
-# Inject custom CSS
+# Inject custom CSS and animations
+# Theme presets
+theme_option = st.sidebar.selectbox("Theme Preset", ["Default", "Sunrise", "Ocean", "Forest"])
+
+# Define preset colors
+presets = {
+    "Default": (primary_color, secondary_color, background_color, text_color),
+    "Sunrise": ("#ff7e5f", "#feb47b", "#fff5e6", "#333333"),
+    "Ocean": ("#2E8BC0", "#145DA0", "#B1D4E0", "#033E6B"),
+    "Forest": ("#2E7D32", "#66BB6A", "#E8F5E9", "#1B5E20")
+}
+pr, sc, bg, tx = presets[theme_option]
+
 st.markdown(f"""
 <style>
-.reportview-container .main .block-container {{
-    background-color: {background_color};
-    color: {text_color};
-    padding: 1rem;
+:root {{
+    --primary-color: {pr};
+    --secondary-color: {sc};
+    --background-color: {bg};
+    --text-color: {tx};
 }}
-.stSidebar {{
-    background-color: {primary_color};
+.block-container {{
+    background: var(--background-color);
+    color: var(--text-color);
+    transition: background 0.5s ease, color 0.5s ease;
 }}
-.stButton>button {{
-    background-color: {secondary_color} !important;
-    color: white !important;
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
+.Sidebar {{
+    background: var(--primary-color);
+    transition: background 0.5s ease;
 }}
-.stDownloadButton>button {{
-    background-color: {primary_color} !important;
-    color: white !important;
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
+.stButton>button, .stDownloadButton>button {{
+    background-color: var(--secondary-color) !important;
+    transition: background-color 0.5s ease;
 }}
-h1, h2, h3, h4, h5, h6 {{
-    color: {primary_color};
+h1, h2, h3, h4 {{
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gradientBG 3s ease infinite;
+}}
+@keyframes gradientBG {{
+    0% {{background-position: 0% 50%;}}
+    50% {{background-position: 100% 50%;}}
+    100% {{background-position: 0% 50%;}}
 }}
 </style>
 """, unsafe_allow_html=True)
-
 # Title
 st.title("🧠 Smart Medical Dashboard")
 st.markdown("Upload a CSV with a 'transcription' column to generate AI-powered summaries and insights.")
@@ -162,3 +180,4 @@ elif menu == "Export":
                     zf2.writestr(name, content)
             buf2.seek(0)
             st.download_button("Download PDF Reports", buf2, file_name="reports_pdf.zip")
+
