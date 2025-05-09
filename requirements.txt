@@ -6,4 +6,4 @@ textstat
 vaderSentiment
 plotly
 matplotlib
-
+fpdf
