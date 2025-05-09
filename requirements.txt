@@ -1,9 +1,9 @@
 streamlit
-transformers
-torch
 pandas
 textstat
 vaderSentiment
 plotly
 matplotlib
 fpdf>=1.7.2
+torch==2.0.1
+transformers==4.38.2
